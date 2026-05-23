@@ -35,6 +35,16 @@ pragma solidity ^0.8.24;
 ///        - **Subnet isolation.** Hum bees in one subnet read against
 ///          this interface; other subnets do the same against their own
 ///          deployment.
+///
+///      Attribution convention:
+///        Every external surface that produces a flow (subscribe,
+///        attestDegradation, arbiterRule) carries a `bytes32 builder`
+///        parameter. The tag is stored on the corresponding Subscription
+///        and Claim records and emitted on FollowerSubscribed,
+///        DegradationFlagged, and ArbiterRuled events. The shape
+///        aligns with substrate-conformant attribution markers in
+///        `reverbprotocol/protocol` (IAttributable, planned). Callers
+///        that opt out pass `bytes32(0)`.
 interface IDamanCopyBond {
     /// @notice Bond tier classifying leader admission and bond ratio.
     enum Tier { Retail, Mid, Institutional }
@@ -54,14 +64,24 @@ interface IDamanCopyBond {
     }
 
     /// @notice One record per (follower, leader) subscription.
+    /// @dev    The `builder` field carries the bytes32 attribution
+    ///         convention common across substrate-conformant
+    ///         consumers (the same shape Reverb Markets' Operator.sol
+    ///         carries). A third-party UI binding this subscription
+    ///         can be attributed on every downstream flow by setting
+    ///         `builder` at subscribe time.
     struct Subscription {
         address follower;
         address leader;
         uint256 capital;          // delegated capital, in USDC
         uint64 since;
+        bytes32 builder;          // attribution tag travelling with the subscription
     }
 
     /// @notice One record per degradation claim.
+    /// @dev    `builder` carries the bytes32 attribution convention,
+    ///         set by the watchdog filing the claim. The same tag is
+    ///         echoed on the corresponding ArbiterRuled event.
     struct Claim {
         uint256 id;
         address leader;
@@ -71,6 +91,7 @@ interface IDamanCopyBond {
         uint64 disputeWindowEnds;
         ClaimStatus status;
         uint256 slashAmount;      // populated after ruling
+        bytes32 builder;          // attribution tag, set on attestDegradation
     }
 
     // --- Events ----------------------------------------------------------
@@ -79,7 +100,12 @@ interface IDamanCopyBond {
     event LeaderBondPosted(address indexed leader, uint256 amount, uint256 totalBond);
     event LeaderDeactivated(address indexed leader, string reason);
 
-    event FollowerSubscribed(address indexed follower, address indexed leader, uint256 capital);
+    event FollowerSubscribed(
+        address indexed follower,
+        address indexed leader,
+        uint256 capital,
+        bytes32 builder
+    );
     event FollowerUnsubscribed(address indexed follower, address indexed leader);
 
     /// @notice On-platform trade event recorded by the operator-side oracle.
@@ -105,10 +131,16 @@ interface IDamanCopyBond {
         uint256 indexed claimId,
         address indexed leader,
         address indexed watchdog,
-        bytes32 evidenceHash
+        bytes32 evidenceHash,
+        bytes32 builder
     );
     event DisputeOpened(uint256 indexed claimId, address indexed leader);
-    event ArbiterRuled(uint256 indexed claimId, uint256 slashAmount, bool upheld);
+    event ArbiterRuled(
+        uint256 indexed claimId,
+        uint256 slashAmount,
+        bool upheld,
+        bytes32 builder
+    );
     event BondSlashed(address indexed leader, uint256 amount, uint256 indexed claimId);
     event BondWithdrawn(address indexed leader, uint256 amount);
 
@@ -151,7 +183,11 @@ interface IDamanCopyBond {
     // --- Follower lifecycle ----------------------------------------------
 
     /// @notice Subscribe to a leader's strategy with delegated capital.
-    function subscribe(address leader, uint256 capital) external;
+    /// @param  leader   leader to subscribe to
+    /// @param  capital  delegated USDC, in atomic units
+    /// @param  builder  bytes32 attribution tag travelling with the
+    ///                  subscription. Pass `bytes32(0)` to opt out.
+    function subscribe(address leader, uint256 capital, bytes32 builder) external;
 
     /// @notice End a subscription. Implementations MUST settle any
     ///         pending follower-side capital atomically.
@@ -173,7 +209,15 @@ interface IDamanCopyBond {
     /// @notice File a degradation claim against a leader. Returns claim ID.
     ///         The implementation MAY require a watchdog bond or registry
     ///         membership; the interface is silent on watchdog policy.
-    function attestDegradation(address leader, bytes32 evidenceHash) external returns (uint256 claimId);
+    /// @param  leader        leader the claim is filed against
+    /// @param  evidenceHash  keccak256 of the off-chain evidence payload
+    /// @param  builder       bytes32 attribution tag recorded on the claim
+    ///                       and echoed on the corresponding ArbiterRuled event
+    function attestDegradation(
+        address leader,
+        bytes32 evidenceHash,
+        bytes32 builder
+    ) external returns (uint256 claimId);
 
     /// @notice Contest a filed claim. Callable only by the leader named
     ///         in the claim, only before the dispute window closes.
@@ -181,7 +225,15 @@ interface IDamanCopyBond {
 
     /// @notice Rule on a contested claim. Restricted to the arbiter address.
     ///         `slashAmount` MUST NOT exceed `BondEconomics.maxSlashAmount(bond)`.
-    function arbiterRule(uint256 claimId, uint256 slashAmount, bool upheld) external;
+    /// @param  builder  bytes32 attribution tag emitted on ArbiterRuled. Pass
+    ///                  `bytes32(0)` to inherit the tag from the underlying
+    ///                  claim; pass a non-zero value to override.
+    function arbiterRule(
+        uint256 claimId,
+        uint256 slashAmount,
+        bool upheld,
+        bytes32 builder
+    ) external;
 
     // --- View accessors --------------------------------------------------
 
