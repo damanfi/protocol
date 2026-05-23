@@ -24,6 +24,19 @@ Daman Protocol's slash dispatch routes through Reverb Protocol (`github.com/reve
 
 Daman Protocol is the copy-bond state-machine layer above the dispute primitive.
 
+## Substrate consumption
+
+Daman implementations consume a set of substrate-level interfaces from `reverbprotocol/protocol` so consumer products (Reverb Markets, future deployments) can read Daman's contracts uniformly. The intent is that the Daman-side implementations declare `is` on these interfaces as Reverb Protocol ships them:
+
+- `IBountyAccrual`: shape for routing a slice of slashed bond to the agent that filed the upheld claim.
+- `IReputationRegistry`: cumulative-upheld / cumulative-rejected scoring per agent address.
+- `ICCTPReceiver`: CCTP v2 burn-and-mint reception with a `handlePayload(bytes, uint256)` activation hook.
+- `IBondYieldVault`: USYC Teller deposit/redeem for idle bond capital with yield routing to the leader on undisputed withdrawal or the treasury on slash-upheld.
+- `IStableFXSwap`: atomic StableFX FxEscrow settlement for EURC-denominated bonds.
+- `IAttributable`: bytes32 builder attribution marker travelling with subscribe, attestDegradation, arbiterRule, and bounty events.
+
+Where a substrate interface is not yet shipped, the Daman side carries the implementation directly and adds the `is` declaration when the interface lands. The protocol-level intent is one source of truth for cross-consumer compatibility; the impl-level fact is that Daman's vanilla implementation is the canonical Daman-style behavior.
+
 ## ADR-001
 
 The oracle reads on-platform `SettlementCompleted` and `TradeExecuted` events from the deployment's own contracts. No off-platform leaderboards, no third-party performance feeds, no external trader-PnL signals enter the bond state. Hum is the transport for bee coordination; the chain is the truth.
