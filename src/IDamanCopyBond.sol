@@ -139,7 +139,8 @@ interface IDamanCopyBond {
         uint256 indexed claimId,
         uint256 slashAmount,
         bool upheld,
-        bytes32 builder
+        bytes32 builder,
+        bytes32 traceCid
     );
     event BondSlashed(address indexed leader, uint256 amount, uint256 indexed claimId);
     event BondWithdrawn(address indexed leader, uint256 amount);
@@ -160,7 +161,7 @@ interface IDamanCopyBond {
     error AlreadyDisputed(uint256 claimId);
     error AlreadyRuled(uint256 claimId);
     error SlashCapExceeded(uint16 capBps);
-    error ZeroAddress();
+    error NullAddress();
     error LeverageNotPermitted();
     error ShortNotPermitted();
 
@@ -228,11 +229,15 @@ interface IDamanCopyBond {
     /// @param  builder  bytes32 attribution tag emitted on ArbiterRuled. Pass
     ///                  `bytes32(0)` to inherit the tag from the underlying
     ///                  claim; pass a non-zero value to override.
+    /// @param  traceCid bytes32-encoded IPFS CID of the structured
+    ///                  reasoning-trace JSON for this ruling. Pass
+    ///                  `bytes32(0)` when no trace is pinned.
     function arbiterRule(
         uint256 claimId,
         uint256 slashAmount,
         bool upheld,
-        bytes32 builder
+        bytes32 builder,
+        bytes32 traceCid
     ) external;
 
     // --- View accessors --------------------------------------------------
